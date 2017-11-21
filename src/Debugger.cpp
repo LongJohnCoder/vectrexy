@@ -1,4 +1,5 @@
 #include "Debugger.h"
+#include "CircularBuffer.h"
 #include "Cpu.h"
 #include "CpuHelpers.h"
 #include "CpuOpCodes.h"
@@ -18,6 +19,27 @@
 #include <vector>
 
 namespace {
+    const size_t TraceBufferSize = 1024;
+    const size_t TraceBufferStringSize = 1024;
+
+    template <size_t size>
+    using FixedStringBuffer = std::array<char, size>;
+
+    using TraceCircularBuffer = CircularBuffer<FixedStringBuffer<TraceBufferStringSize>>;
+
+    TraceCircularBuffer g_traceCircularBuffer;
+
+    void tracef(const char* format, ...) {
+        TraceCircularBuffer::ElemType buffer;
+        va_list args;
+        va_start(args, format);
+        int bytesWritten = vsnprintf(&buffer[0], sizeof(buffer), format, args);
+        va_end(args);
+        assert(bytesWritten < sizeof(buffer));
+
+        buffer[bytesWritten] = '\0';
+        g_traceCircularBuffer.PushBack(buffer);
+    }
 
     template <typename T>
     T HexStringToIntegral(const char* s) {
@@ -504,34 +526,45 @@ namespace {
                GetCCString(cpuRegisters).c_str());
     }
 
-    void PrintRegistersCompact(const CpuRegisters& cpuRegisters) {
-        const auto& r = cpuRegisters;
-        printf("A$%02x|B$%02x|X$%04x|Y$%04x|U$%04x|S$%04x|DP$%02x|%s", r.A, r.B, r.X, r.Y, r.U, r.S,
-               r.DP, GetCCString(cpuRegisters).c_str());
-    }
+    // void PrintRegistersCompact(const CpuRegisters& cpuRegisters) {
+    //    const auto& r = cpuRegisters;
+    //    tracef("A$%02x|B$%02x|X$%04x|Y$%04x|U$%04x|S$%04x|DP$%02x|%s", r.A, r.B, r.X, r.Y, r.U,
+    //    r.S,
+    //           r.DP, GetCCString(cpuRegisters).c_str());
+    //}
 
     void PrintOp(const CpuRegisters& cpuRegisters, const MemoryBus& memoryBus,
                  const Debugger::SymbolTable& symbolTable) {
         auto op = DisassembleOp(cpuRegisters, memoryBus, symbolTable);
 
-        using namespace Platform;
-        ScopedConsoleColor scc(ConsoleColor::Gray);
-        printf("[$%04x] ", cpuRegisters.PC);
-        SetConsoleColor(ConsoleColor::LightYellow);
-        printf("%-10s ", op.hexInstruction.c_str());
-        SetConsoleColor(ConsoleColor::LightAqua);
-        printf("%-32s ", op.disasmInstruction.c_str());
-        SetConsoleColor(ConsoleColor::LightGreen);
-        printf("%-40s ", op.comment.c_str());
+        // using namespace Platform;
+        // ScopedConsoleColor scc(ConsoleColor::Gray);
+        // tracef("[$%04x] ", cpuRegisters.PC);
+        // SetConsoleColor(ConsoleColor::LightYellow);
+        // tracef("%-10s ", op.hexInstruction.c_str());
+        // SetConsoleColor(ConsoleColor::LightAqua);
+        // tracef("%-32s ", op.disasmInstruction.c_str());
+        // SetConsoleColor(ConsoleColor::LightGreen);
+        // tracef("%-40s ", op.comment.c_str());
+
+        tracef("[$%04x] %-10s %-32s %-40s ", cpuRegisters.PC, op.hexInstruction.c_str(),
+               op.disasmInstruction.c_str(), op.comment.c_str());
     }
 
     void PrintPostOp(const CpuRegisters& cpuRegisters, cycles_t elapsedCycles) {
-        using namespace Platform;
-        ScopedConsoleColor scc(ConsoleColor::Gray);
-        SetConsoleColor(ConsoleColor::LightPurple);
-        printf("%2llu ", elapsedCycles);
-        PrintRegistersCompact(cpuRegisters);
-        printf("\n");
+        // using namespace Platform;
+        // ScopedConsoleColor scc(ConsoleColor::Gray);
+        // SetConsoleColor(ConsoleColor::LightPurple);
+        auto& r = cpuRegisters;
+        tracef("%2llu A$%02x|B$%02x|X$%04x|Y$%04x|U$%04x|S$%04x|DP$%02x|%s\n", elapsedCycles, r.A,
+               r.B, r.X, r.Y, r.U, r.S, r.DP, GetCCString(cpuRegisters).c_str());
+        // PrintRegistersCompact(cpuRegisters);
+        // const auto& r = cpuRegisters;
+        // tracef("A$%02x|B$%02x|X$%04x|Y$%04x|U$%04x|S$%04x|DP$%02x|%s", r.A, r.B, r.X, r.Y, r.U,
+        // r.S,
+        //       r.DP, GetCCString(cpuRegisters).c_str());
+
+        // tracef("\n");
     }
 
     void PrintHelp() {
@@ -588,6 +621,8 @@ void Debugger::Init(MemoryBus& memoryBus, Cpu& cpu, Via& via) {
     m_cpu = &cpu;
     m_via = &via;
 
+    g_traceCircularBuffer.Init(TraceBufferSize);
+
     Platform::SetConsoleCtrlHandler([this] {
         m_breakIntoDebugger = true;
         return true;
@@ -601,7 +636,7 @@ void Debugger::Init(MemoryBus& memoryBus, Cpu& cpu, Via& via) {
     m_breakIntoDebugger = false;
 
     // Enable trace by default?
-    m_traceEnabled = false;
+    m_traceEnabled = true;
 
     m_memoryBus->RegisterCallbacks(
         [&](uint16_t address) {
@@ -638,8 +673,8 @@ bool Debugger::Update(double deltaTime, const Input& input) {
         try {
             cycles_t elapsedCycles = m_cpu->ExecuteInstruction();
             m_via->Update(elapsedCycles, input);
-            if (m_traceEnabled)
-                PrintPostOp(m_cpu->Registers(), elapsedCycles);
+            // if (m_traceEnabled)
+            //    PrintPostOp(m_cpu->Registers(), elapsedCycles);
             return elapsedCycles;
         } catch (std::exception& ex) {
             printf("Exception caught:\n%s\n", ex.what());
