@@ -49,10 +49,10 @@ private:
     }
 
     void Render(double frameTime, Display& display) override {
-        display.DrawLines(m_via.m_lines);
+        display.DrawLines(m_via.GetCurrFrameLines());
 
         if (frameTime > 0)
-            m_via.m_lines.clear();
+            m_via.ClearCurrFrameLines();
     }
 
     void Shutdown() override {}

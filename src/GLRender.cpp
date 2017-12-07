@@ -271,7 +271,15 @@ namespace {
     int g_windowWidth{}, g_windowHeight{};
 
     Viewport g_windowViewport{}, g_overlayViewport{}, g_crtViewport{};
-    std::vector<glm::vec2> g_lineVA, g_pointVA;
+
+    std::vector<Line> g_allLines;
+
+    struct VertexData {
+        glm::vec2 v{};
+        float brightness{};
+    };
+
+    std::vector<VertexData> g_lineVA; // , g_pointVA;
 
     namespace ShaderProgram {
         GLuint renderToTexture{};
@@ -289,7 +297,8 @@ namespace {
     int g_renderedTexture0Index{};
     TextureResource g_renderedTexture0;
     TextureResource g_renderedTexture1;
-    TextureResource g_glowTexture;
+    TextureResource g_glowTexture1;
+    TextureResource g_glowTexture2;
     TextureResource g_crtTexture;
     TextureResource g_overlayTexture;
 
@@ -303,6 +312,8 @@ namespace GLRender {
         // glEnable(GL_DEPTH_TEST);
         // glDepthFunc(GL_LEQUAL);
         // glHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST);
+
+        glDisable(GL_CULL_FACE);
 
         // Initialize GLEW
         glewExperimental = true; // Needed for core profile
@@ -393,9 +404,15 @@ namespace GLRender {
         AllocateTexture(*g_renderedTexture0, g_crtViewport.w, g_crtViewport.h, GL_RGB32F);
         g_renderedTexture1 = MakeTextureResource();
         AllocateTexture(*g_renderedTexture1, g_crtViewport.w, g_crtViewport.h, GL_RGB32F);
-        g_glowTexture = MakeTextureResource();
-        glObjectLabel(GL_TEXTURE, *g_glowTexture, -1, "g_glowTexture");
-        AllocateTexture(*g_glowTexture, g_crtViewport.w, g_crtViewport.h, GL_RGB32F);
+
+        g_glowTexture1 = MakeTextureResource();
+        glObjectLabel(GL_TEXTURE, *g_glowTexture1, -1, "g_glowTexture1");
+        AllocateTexture(*g_glowTexture1, g_crtViewport.w, g_crtViewport.h, GL_RGB32F);
+
+        g_glowTexture2 = MakeTextureResource();
+        glObjectLabel(GL_TEXTURE, *g_glowTexture2, -1, "g_glowTexture2");
+        AllocateTexture(*g_glowTexture2, g_crtViewport.w, g_crtViewport.h, GL_RGB32F);
+
         g_crtTexture = MakeTextureResource();
         AllocateTexture(*g_crtTexture, g_overlayViewport.w, g_overlayViewport.h, GL_RGB);
         glObjectLabel(GL_TEXTURE, *g_crtTexture, -1, "g_crtTexture");
@@ -409,7 +426,93 @@ namespace GLRender {
         return true;
     }
 
+    // Integate current to target using a damped approach. Rate of 0.99 means we'd reach
+    // 99% of the way to target in 1 second.
+    template <typename T>
+    T integrateDamped(T current, T target, float rate, float deltaTime) {
+        float ratio = 1.0f - pow(1.0f - rate, deltaTime);
+        return current + (target - current) * ratio;
+    }
+
+    void DarkenLines(double frameTime, std::vector<Line>& lines) {
+        static float darkenSpeedScale = 3.0;
+        ImGui::SliderFloat("darkenSpeedScale", &darkenSpeedScale, 0.0f, 10.0f);
+
+        if (lines.empty())
+            return;
+
+        // For performance, we swap elems to delete with the last valid one,
+        // then erase all invalid elems at the end
+        auto endIter = lines.end();
+
+        for (auto iter = lines.begin(); iter != endIter;) {
+            auto& line = *iter;
+            line.brightness = integrateDamped(line.brightness, 0.f, 0.99f,
+                                              static_cast<float>(frameTime) * darkenSpeedScale);
+
+            // line.brightness =
+            //    std::max(line.brightness - static_cast<float>(frameTime) * darkenSpeedScale, 0.f);
+
+            // if (line.brightness <= 0.0000001f) {
+            if (line.brightness <= 0.0001f) {
+                // if (line.brightness <= 0.0f) {
+                --endIter;
+                std::iter_swap(iter, endIter);
+            } else {
+                ++iter;
+            }
+        }
+
+        lines.erase(endIter, lines.end());
+    }
+
+    std::vector<VertexData> CreateLineVertexArray(std::vector<Line>& lines) {
+        std::vector<VertexData> result;
+        result.reserve(lines.size() * 6);
+
+        auto AlmostEqual = [](float a, float b, float epsilon = 0.01f) {
+            return abs(a - b) <= epsilon;
+        };
+
+        static float lineWidth = 1.0f;
+        ImGui::SliderFloat("lineWidth", &lineWidth, 0.1f, 1.0f);
+
+        // float hlw = lineWidth / 2.0f;
+
+        for (auto& line : lines) {
+            glm::vec2 p0{line.p0.x, line.p0.y};
+            glm::vec2 p1{line.p1.x, line.p1.y};
+
+            if (AlmostEqual(p0.x, p1.x) && AlmostEqual(p0.y, p1.y)) {
+                // g_pointVA.push_back(p0);
+
+                // auto a = VertexData{p0 + glm::vec2{0, hlw}, line.brightness};
+                // auto b = VertexData{p0 - glm::vec2{0, hlw}, line.brightness};
+                // auto c = VertexData{p0 + glm::vec2{hlw, 0}, line.brightness};
+                // auto d = VertexData{p0 - glm::vec2{hlw, 0}, line.brightness};
+
+                // result.insert(result.end(), {a, b, c, c, d, a});
+
+            } else {
+                // glm::vec2 v01 = glm::normalize(p1 - p0);
+                // glm::vec2 n(-v01.y, v01.x);
+
+                // auto a = VertexData{p0 + n * hlw, line.brightness};
+                // auto b = VertexData{p0 - n * hlw, line.brightness};
+                // auto c = VertexData{p1 - n * hlw, line.brightness};
+                // auto d = VertexData{p1 + n * hlw, line.brightness};
+
+                // result.insert(result.end(), {a, b, c, c, d, a});
+
+                result.push_back({p0, line.brightness});
+                result.push_back({p1, line.brightness});
+            }
+        }
+        return result;
+    }
+
     void RenderScene(double frameTime) {
+
         // Force resize on crt scale change
         {
             static float scaleX = CRT_SCALE_X;
@@ -424,8 +527,8 @@ namespace GLRender {
             }
         }
 
-        if (frameTime > 0)
-            g_renderedTexture0Index = (g_renderedTexture0Index + 1) % 2;
+        // if (frameTime > 0)
+        //    g_renderedTexture0Index = (g_renderedTexture0Index + 1) % 2;
 
         auto& currRenderedTexture0 =
             g_renderedTexture0Index == 0 ? g_renderedTexture0 : g_renderedTexture1;
@@ -488,12 +591,11 @@ namespace GLRender {
         {
             // Render to our framebuffer
             glBindFramebuffer(GL_FRAMEBUFFER, *g_textureFB);
+            glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, *currRenderedTexture0, 0);
             SetViewport(g_crtViewport); //@TODO: maybe get Viewport from texture
                                         // dimensions? ({0,0,texW,textH})
-            glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, *currRenderedTexture0, 0);
 
-            // Purposely do not clear the target texture.
-            // glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            glClear(GL_COLOR_BUFFER_BIT);
 
             // Use our shader
             glUseProgram(ShaderProgram::renderToTexture);
@@ -504,29 +606,48 @@ namespace GLRender {
 
             auto DrawVertices = [](auto& VA, GLenum mode) {
                 auto vbo = MakeBufferResource();
-                SetVertexBufferData(*vbo, VA);
+                // SetVertexBufferData(*vbo, VA);
+
+                glBindBuffer(GL_ARRAY_BUFFER, *vbo);
+                glBufferData(GL_ARRAY_BUFFER, VA.size() * sizeof(VertexData), VA.data(),
+                             GL_DYNAMIC_DRAW);
 
                 glEnableVertexAttribArray(0);
-                glBindBuffer(GL_ARRAY_BUFFER, *vbo);
-                glVertexAttribPointer(0,        // attribute
-                                      2,        // size
-                                      GL_FLOAT, // type
-                                      GL_FALSE, // normalized?
-                                      0,        // stride
-                                      (void*)0  // array buffer offset
+                glEnableVertexAttribArray(1);
+
+                // Vertices
+                glVertexAttribPointer(0,                             // attribute
+                                      2,                             // size
+                                      GL_FLOAT,                      // type
+                                      GL_FALSE,                      // normalized?
+                                      sizeof(VertexData),            // stride
+                                      (void*)offsetof(VertexData, v) // array buffer offset
+                );
+
+                // Brightness values
+                glVertexAttribPointer(1,                                      // attribute
+                                      1,                                      // size
+                                      GL_FLOAT,                               // type
+                                      GL_FALSE,                               // normalized?
+                                      sizeof(VertexData),                     // stride
+                                      (void*)offsetof(VertexData, brightness) // array buffer offset
                 );
 
                 glDrawArrays(mode, 0, VA.size());
 
-                VA.clear();
+                // VA.clear();
 
+                glDisableVertexAttribArray(1);
                 glDisableVertexAttribArray(0);
             };
 
-            DrawVertices(g_lineVA, GL_LINES);
-            DrawVertices(g_pointVA, GL_POINTS);
+            g_lineVA = CreateLineVertexArray(g_allLines);
+            // auto lineVA = CreateLineVertexArray(g_allLines);
+            DrawVertices(g_lineVA, /*GL_TRIANGLES*/ GL_LINES);
+            // DrawVertices(g_pointVA, GL_POINTS);
         }
 
+        /*
         /////////////////////////////////////////////////////////////////
         // PASS 2: darken texture
         /////////////////////////////////////////////////////////////////
@@ -556,10 +677,12 @@ namespace GLRender {
 
             DrawFullScreenQuad();
         }
+        */
 
+        /*
         // GLOW
         {
-            static float radius = 3.0f;
+            static float radius = 0.f; // 3.0f;
             ImGui::SliderFloat("glowRadius", &radius, 0.0f, 5.0f);
 
             static std::array<float, 5> glowKernelValues = {
@@ -598,12 +721,15 @@ namespace GLRender {
                 DrawFullScreenQuad();
             };
 
-            Glow(currRenderedTexture0, g_glowTexture, {1.f, 0.f});
-            Glow(g_glowTexture, currRenderedTexture0, {0.f, 1.f});
+            Glow(currRenderedTexture0, g_glowTexture1, {1.f, 0.f});
+            //Glow(g_glowTexture1, currRenderedTexture0, { 0.f, 1.f });
+            Glow(g_glowTexture1, g_glowTexture2, {0.f, 1.f});
         }
+        */
 
         // Copy glow texture back to currRenderedTexture0
-        //@TODO: technically don't need to do this, can just use g_glowTexture as input to next pass
+        //@TODO: technically don't need to do this, can just use g_glowTexture1 as input to next
+        // pass
         //{
         //    glBindFramebuffer(GL_FRAMEBUFFER, *g_textureFB);
         //    SetViewport(g_crtViewport);
@@ -612,7 +738,7 @@ namespace GLRender {
         //    glUseProgram(ShaderProgram::copyTexture);
 
         //    glActiveTexture(GL_TEXTURE0);
-        //    glBindTexture(GL_TEXTURE_2D, *g_glowTexture);
+        //    glBindTexture(GL_TEXTURE_2D, *g_glowTexture1);
         //    GLuint texID = glGetUniformLocation(ShaderProgram::copyTexture, "inputTexture");
         //    glUniform1i(texID, 0);
 
@@ -635,7 +761,8 @@ namespace GLRender {
             // Bind our texture in Texture Unit 0
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, *currRenderedTexture0);
-            GLuint texID = glGetUniformLocation(ShaderProgram::darkenTexture, "renderedTexture");
+            GLuint texID =
+                glGetUniformLocation(ShaderProgram::gameScreenToCrtTexture, "renderedTexture");
             // Set our "renderedTexture0" sampler to use Texture Unit 0
             glUniform1i(texID, 0);
 
@@ -677,6 +804,9 @@ namespace GLRender {
 
             DrawFullScreenQuad();
         }
+
+        DarkenLines(frameTime, g_allLines);
+
     } // namespace GLRender
 } // namespace GLRender
 
@@ -686,19 +816,6 @@ void Display::Clear() {
 }
 
 void Display::DrawLines(const std::vector<Line>& lines) {
-    auto AlmostEqual = [](float a, float b, float epsilon = 0.01f) {
-        return abs(a - b) <= epsilon;
-    };
-
-    for (auto& line : lines) {
-        glm::vec2 p0{line.p0.x, line.p0.y};
-        glm::vec2 p1{line.p1.x, line.p1.y};
-
-        if (AlmostEqual(p0.x, p1.x) && AlmostEqual(p0.y, p1.y)) {
-            g_pointVA.push_back(p0);
-        } else {
-            g_lineVA.push_back(p0);
-            g_lineVA.push_back(p1);
-        }
-    }
+    // g_allLines.insert(g_allLines.end(), lines.begin(), lines.end());
+    g_allLines = lines;
 }

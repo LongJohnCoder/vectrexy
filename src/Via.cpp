@@ -134,7 +134,7 @@ void Via::Update(cycles_t cycles, const Input& input) {
         // We might draw even when integrators are disabled (e.g. drawing dots)
         bool drawingEnabled = !m_blank && (m_brightness > 0.f && m_brightness <= 128.f);
         if (drawingEnabled) {
-            m_lines.emplace_back(Line{lastPos, m_pos});
+            m_currFrameLines.emplace_back(Line{lastPos, m_pos});
         }
     }
 }

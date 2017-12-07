@@ -19,6 +19,9 @@ public:
     void Init(MemoryBus& memoryBus);
     void Update(cycles_t cycles, const Input& input);
 
+    const std::vector<Line>& GetCurrFrameLines() const { return m_currFrameLines; }
+    void ClearCurrFrameLines() { m_currFrameLines.clear(); }
+
 private:
     uint8_t Read(uint16_t address) const override;
     void Write(uint16_t address, uint8_t value) override;
@@ -48,11 +51,10 @@ private:
     float m_brightness = 0.f;
     bool m_blank = false;
 
-public:
     Timer1 m_timer1;
     Timer2 m_timer2;
     ShiftRegister m_shiftRegister;
     uint8_t m_joystickButtonState;
     std::array<int8_t, 4> m_joystickAnalogState;
-    std::vector<Line> m_lines;
+    std::vector<Line> m_currFrameLines;
 };
