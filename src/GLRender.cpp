@@ -438,8 +438,30 @@ namespace GLRender {
         static float darkenSpeedScale = 3.0;
         ImGui::SliderFloat("darkenSpeedScale", &darkenSpeedScale, 0.0f, 10.0f);
 
+        // static int currFrame = 0;
+        //++currFrame;
+        // currFrame = !currFrame;
+
+        static std::vector<Line> g_allLines2;
+        g_allLines2.clear();
+
         if (lines.empty())
             return;
+
+        for (auto& line : lines) {
+            line.brightness = integrateDamped(line.brightness, 0.f, 0.99f,
+                                              static_cast<float>(frameTime) * darkenSpeedScale);
+
+            if (line.brightness > 0.01f) {
+                g_allLines2.push_back(line);
+            }
+        }
+
+        std::swap(lines, g_allLines2);
+
+        /*
+        for (auto& line : lines)
+            line.processed = false;
 
         // For performance, we swap elems to delete with the last valid one,
         // then erase all invalid elems at the end
@@ -447,6 +469,11 @@ namespace GLRender {
 
         for (auto iter = lines.begin(); iter != endIter;) {
             auto& line = *iter;
+            // assert(line.frame != currFrame && line.frame + 1 == currFrame);
+            if (line.processed)
+                printf("here");
+            line.processed = true;
+
             line.brightness = integrateDamped(line.brightness, 0.f, 0.99f,
                                               static_cast<float>(frameTime) * darkenSpeedScale);
 
@@ -454,7 +481,7 @@ namespace GLRender {
             //    std::max(line.brightness - static_cast<float>(frameTime) * darkenSpeedScale, 0.f);
 
             // if (line.brightness <= 0.0000001f) {
-            if (line.brightness <= 0.0001f) {
+            if (line.brightness <= 0.01f) {
                 // if (line.brightness <= 0.0f) {
                 --endIter;
                 std::iter_swap(iter, endIter);
@@ -463,11 +490,26 @@ namespace GLRender {
             }
         }
 
+        for (auto it = endIter; it != lines.end(); ++it) {
+            auto& line = *it;
+            if (line.processed && !(line.brightness <= 0.0001f)) {
+                printf("here");
+            }
+        }
+
         lines.erase(endIter, lines.end());
+
+        for (auto& line : lines) {
+            if (!line.processed)
+                printf("here");
+        }
+        */
     }
 
-    std::vector<VertexData> CreateLineVertexArray(std::vector<Line>& lines) {
-        std::vector<VertexData> result;
+    /*std::vector<VertexData>*/ void CreateLineVertexArray(std::vector<Line>& lines) {
+        // std::vector<VertexData> result;
+        g_lineVA.clear();
+        auto& result = g_lineVA;
         result.reserve(lines.size() * 6);
 
         auto AlmostEqual = [](float a, float b, float epsilon = 0.01f) {
@@ -508,7 +550,7 @@ namespace GLRender {
                 result.push_back({p1, line.brightness});
             }
         }
-        return result;
+        // return result;
     }
 
     void RenderScene(double frameTime) {
@@ -641,7 +683,7 @@ namespace GLRender {
                 glDisableVertexAttribArray(0);
             };
 
-            g_lineVA = CreateLineVertexArray(g_allLines);
+            /*g_lineVA =*/CreateLineVertexArray(g_allLines);
             // auto lineVA = CreateLineVertexArray(g_allLines);
             DrawVertices(g_lineVA, /*GL_TRIANGLES*/ GL_LINES);
             // DrawVertices(g_pointVA, GL_POINTS);
@@ -816,6 +858,6 @@ void Display::Clear() {
 }
 
 void Display::DrawLines(const std::vector<Line>& lines) {
-    // g_allLines.insert(g_allLines.end(), lines.begin(), lines.end());
-    g_allLines = lines;
+    g_allLines.insert(g_allLines.end(), lines.begin(), lines.end());
+    // g_allLines = lines;
 }
