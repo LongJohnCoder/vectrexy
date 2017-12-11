@@ -279,7 +279,7 @@ namespace {
         float brightness{};
     };
 
-    std::vector<VertexData> g_lineVA; // , g_pointVA;
+    std::vector<VertexData> g_lineVA, g_pointVA;
 
     namespace ShaderProgram {
         GLuint renderToTexture{};
@@ -506,11 +506,9 @@ namespace GLRender {
         */
     }
 
-    /*std::vector<VertexData>*/ void CreateLineVertexArray(std::vector<Line>& lines) {
-        // std::vector<VertexData> result;
+    void CreateLineVertexArray(std::vector<Line>& lines) {
         g_lineVA.clear();
-        auto& result = g_lineVA;
-        result.reserve(lines.size() * 6);
+        g_pointVA.clear();
 
         auto AlmostEqual = [](float a, float b, float epsilon = 0.01f) {
             return abs(a - b) <= epsilon;
@@ -526,7 +524,7 @@ namespace GLRender {
             glm::vec2 p1{line.p1.x, line.p1.y};
 
             if (AlmostEqual(p0.x, p1.x) && AlmostEqual(p0.y, p1.y)) {
-                // g_pointVA.push_back(p0);
+                g_pointVA.push_back({p0, line.brightness});
 
                 // auto a = VertexData{p0 + glm::vec2{0, hlw}, line.brightness};
                 // auto b = VertexData{p0 - glm::vec2{0, hlw}, line.brightness};
@@ -546,8 +544,8 @@ namespace GLRender {
 
                 // result.insert(result.end(), {a, b, c, c, d, a});
 
-                result.push_back({p0, line.brightness});
-                result.push_back({p1, line.brightness});
+                g_lineVA.push_back({p0, line.brightness});
+                g_lineVA.push_back({p1, line.brightness});
             }
         }
         // return result;
@@ -686,7 +684,7 @@ namespace GLRender {
             /*g_lineVA =*/CreateLineVertexArray(g_allLines);
             // auto lineVA = CreateLineVertexArray(g_allLines);
             DrawVertices(g_lineVA, /*GL_TRIANGLES*/ GL_LINES);
-            // DrawVertices(g_pointVA, GL_POINTS);
+            DrawVertices(g_pointVA, GL_POINTS);
         }
 
         /*
