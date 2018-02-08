@@ -2,8 +2,8 @@
 
 #include "Base.h"
 #include <algorithm>
+#include <array>
 #include <functional>
-#include <vector>
 
 using MemoryRange = std::pair<uint16_t, uint16_t>;
 
@@ -14,13 +14,13 @@ struct IMemoryBusDevice {
 
 class MemoryBus {
 public:
-    void ConnectDevice(IMemoryBusDevice& device, MemoryRange range) {
-        m_devices.push_back(DeviceInfo{&device, range});
+    MemoryBus() { std::fill(m_deviceMap.begin(), m_deviceMap.end(), nullptr); }
 
-        std::sort(m_devices.begin(), m_devices.end(),
-                  [](const DeviceInfo& info1, const DeviceInfo& info2) {
-                      return info1.memoryRange.first < info2.memoryRange.first;
-                  });
+    void ConnectDevice(IMemoryBusDevice& device, MemoryRange range) {
+        for (uint32_t address = range.first; address <= range.second; ++address) {
+            assert(m_deviceMap[address] == nullptr); // Should't map an address twice
+            m_deviceMap[address] = &device;
+        }
     }
 
     //@TODO: Move this callback stuff out of here, perhaps in some DebuggerMemoryBus class.
@@ -34,7 +34,9 @@ public:
     void SetCallbacksEnabled(bool enabled) { m_callbacksEnabled = enabled; }
 
     uint8_t Read(uint16_t address) const {
-        uint8_t value = FindDeviceInfo(address).device->Read(address);
+        auto device = m_deviceMap[address];
+        ASSERT_MSG(device, "Unmapped address");
+        uint8_t value = device->Read(address);
 
         if (m_callbacksEnabled && m_onReadCallback)
             m_onReadCallback(address, value);
@@ -46,33 +48,13 @@ public:
         if (m_callbacksEnabled && m_onWriteCallback)
             m_onWriteCallback(address, value);
 
-        FindDeviceInfo(address).device->Write(address, value);
+        auto device = m_deviceMap[address];
+        ASSERT_MSG(device, "Unmapped address");
+        device->Write(address, value);
     }
 
 private:
-    struct DeviceInfo {
-        IMemoryBusDevice* device = nullptr;
-        MemoryRange memoryRange;
-    };
-
-    const DeviceInfo& FindDeviceInfo(uint16_t address) const {
-        // We assume at least 1 device is connected. This one condition allows us to check the
-        // address against the end of each range in the inner loop.
-        if (address >= m_devices[0].memoryRange.first) {
-            for (const auto& info : m_devices) {
-                if (address <= info.memoryRange.second) {
-                    return info;
-                }
-            }
-        }
-
-        FAIL_MSG("Unmapped address");
-        static DeviceInfo nullDeviceInfo{};
-        return nullDeviceInfo;
-    }
-
-    // Sorted by first address in range
-    std::vector<DeviceInfo> m_devices;
+    std::array<IMemoryBusDevice*, 65536> m_deviceMap;
 
     bool m_callbacksEnabled = true;
     OnReadCallback m_onReadCallback;
