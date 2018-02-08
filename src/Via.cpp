@@ -126,6 +126,9 @@ void Via::Update(cycles_t cycles, const Input& input) {
         const auto lastPos = m_pos;
         Vector2 delta = {0.f, 0.f};
 
+        static bool prevDrawingEnabled = false;
+        static Vector2 prevDrawDirection = {};
+
         // Integrators are enabled while RAMP line is active (low)
         bool integratorsEnabled = !TestBits(m_portB, PortB::RampDisabled);
         if (integratorsEnabled) {
@@ -137,8 +140,16 @@ void Via::Update(cycles_t cycles, const Input& input) {
         // We might draw even when integrators are disabled (e.g. drawing dots)
         bool drawingEnabled = !m_blank && (m_brightness > 0.f && m_brightness <= 128.f);
         if (drawingEnabled) {
-            m_lines.emplace_back(Line{lastPos, m_pos});
+            if (prevDrawingEnabled && AlmostEqual(Normalize(m_velocity), prevDrawDirection)) {
+                // Coalesce
+                m_lines.back().p1 = m_pos;
+            } else {
+                m_lines.emplace_back(Line{lastPos, m_pos});
+            }
         }
+
+        prevDrawingEnabled = prevDrawingEnabled;
+        prevDrawDirection = Normalize(m_velocity);
     }
 }
 
